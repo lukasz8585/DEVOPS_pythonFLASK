@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: isa-service-lb
+  namespace: isa
+spec:
+  type: LoadBalancer
+  selector:
+    app: isa-webserver-app
+  ports:
+    - port: 80
+      targetPort: 5000
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: isa-ingress
+  namespace: isa
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+  labels:
+    app: isa-ingress
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /*
+            backend:
+              serviceName: isa-service-lb
+              servicePort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: isa-webserver-deploy
+  namespace: isa
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: isa-webserver-app
+  template:
+    metadata:
+      labels:
+        app: isa-webserver-app
+    spec:
+      nodeSelector:
+        alpha.eksctl.io/nodegroup-name: c5large-nodes
+      volumes:
+        - name: app-logs
+          emptyDir: { }
+      containers:
+        - image: YOUR_ID.dkr.ecr.YOUR_REPO_REGION.amazonaws.com/isa-webserver:1.0.1
+          name: webserver
+          env:
+            - name: FLASK_ENV
+              value: "prod"
+          volumeMounts:
+            - mountPath: /var/log/containers
+              name: app-logs
+          resources:
+            requests:
+              memory: "200Mi"
+              cpu: "200m"
+            limits:
+              memory: "500Mi"
+              cpu: "1"
+        - name: logrotate
+          image: realz/logrotate
+          volumeMounts:
+            - mountPath: /var/log/containers
+              name: app-logs
+          env:
+            - name: CRON_EXPR
+              value: "*/15 * * * *"
+            - name: LOGROTATE_LOGFILES
+              value: "/var/log/containers/*.log"
+            - name: LOGROTATE_FILESIZE
+              value: "50M"
+            - name: LOGROTATE_FILENUM
+              value: "5"
